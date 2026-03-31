@@ -1,58 +1,57 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Three-Stage Inpainting Tool</title>
+  <title>Click-to-Mask & Erase Tool</title>
   <style>
     canvas { border: 1px solid black; cursor: crosshair; margin: 10px; }
     #download { display: none; margin-top: 10px; }
   </style>
-  <!-- Load OpenCV.js -->
-  <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
 </head>
 <body>
-  <h2>Original → Masked → Background Filled</h2>
+  <h2>Click Spot → Mask → Erase</h2>
   <input type="file" id="upload" accept="image/*"><br>
-  <button id="applyBtn">Apply Background Fill</button>
+  <button id="eraseBtn">Apply Transparency</button>
   <a id="download" download="edited.png">Download Edited Image</a><br>
 
+  <!-- Three canvases for the 3 stages -->
   <canvas id="original"></canvas>
-  <canvas id="masked"></canvas>
+  <canvas id="mask"></canvas>
   <canvas id="edited"></canvas>
 
   <script>
     const upload = document.getElementById("upload");
     const original = document.getElementById("original");
-    const masked = document.getElementById("masked");
+    const mask = document.getElementById("mask");
     const edited = document.getElementById("edited");
     const ctxO = original.getContext("2d");
-    const ctxM = masked.getContext("2d");
+    const ctxM = mask.getContext("2d");
+    const ctxE = edited.getContext("2d");
     let img = new Image();
-    let maskSpots = [];
+    let maskSpots = []; // store clicked spots
 
     // Upload image
     upload.onchange = e => {
       const file = e.target.files[0];
       img.src = URL.createObjectURL(file);
       img.onload = () => {
-        [original, masked, edited].forEach(c => {
+        [original, mask, edited].forEach(c => {
           c.width = img.width;
           c.height = img.height;
         });
         ctxO.drawImage(img, 0, 0); // original
-        ctxM.drawImage(img, 0, 0); // masked
-        let ctxE = edited.getContext("2d");
-        ctxE.drawImage(img, 0, 0); // edited
+        ctxM.drawImage(img, 0, 0); // mask stage
+        ctxE.drawImage(img, 0, 0); // edited stage
       };
     };
 
     // Click to add mask spot
-    masked.onclick = e => {
-      const rect = masked.getBoundingClientRect();
+    mask.onclick = e => {
+      const rect = mask.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       maskSpots.push({x, y});
 
-      // redraw masked canvas with red overlay
+      // redraw mask canvas
       ctxM.drawImage(img, 0, 0);
       ctxM.fillStyle = "rgba(255,0,0,0.5)";
       maskSpots.forEach(s => {
@@ -62,27 +61,16 @@
       });
     };
 
-    // Apply inpainting (background fill)
-    document.getElementById("applyBtn").onclick = () => {
-      if (typeof cv === "undefined") {
-        alert("OpenCV.js not loaded yet!");
-        return;
-      }
-
-      let src = cv.imread(original); // original image
-      let mask = new cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
-
-      // Build mask for OpenCV
+    // Apply transparency to masked spots
+    document.getElementById("eraseBtn").onclick = () => {
+      ctxE.drawImage(img, 0, 0);
+      ctxE.globalCompositeOperation = "destination-out";
       maskSpots.forEach(s => {
-        cv.circle(mask, new cv.Point(s.x, s.y), 30, new cv.Scalar(255, 255, 255, 255), -1);
+        ctxE.beginPath();
+        ctxE.arc(s.x, s.y, 30, 0, Math.PI * 2);
+        ctxE.fill();
       });
-
-      let dst = new cv.Mat();
-      cv.inpaint(src, mask, dst, 3, cv.INPAINT_TELEA);
-
-      cv.imshow(edited, dst); // show result in third canvas
-
-      src.delete(); mask.delete(); dst.delete();
+      ctxE.globalCompositeOperation = "source-over";
 
       // Show download link
       const download = document.getElementById("download");
